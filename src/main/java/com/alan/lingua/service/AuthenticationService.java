@@ -10,8 +10,6 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
-import java.text.MessageFormat;
-
 @Service
 public class AuthenticationService {
     private final PersonRepository personRepository;
@@ -27,11 +25,11 @@ public class AuthenticationService {
 
     public Mono<TokenDto> authenticate(UserCredentialsDto userCredentialsDto) {
         return personRepository.findFirstByName(userCredentialsDto.getUsername())
-                .switchIfEmpty(Mono.defer(() -> Mono.error(new NotFoundException(MessageFormat.format(
-                        "User {0} does not exist", userCredentialsDto.getUsername())))))
+                .switchIfEmpty(Mono.defer(() -> Mono.error(new NotFoundException(
+                        "User {0} does not exist", userCredentialsDto.getUsername()))))
                 .filter(user -> passwordEncoder.matches(userCredentialsDto.getPassword(), user.getPasswordHash()))
-                .switchIfEmpty(Mono.defer(() -> Mono.error(new NotAuthenticatedException(MessageFormat.format(
-                        "User {0} password is not correct", userCredentialsDto.getUsername())))))
+                .switchIfEmpty(Mono.defer(() -> Mono.error(new NotAuthenticatedException(
+                        "User {0} password is not correct", userCredentialsDto.getUsername()))))
                 .map(user -> jwtSigner.createJwt(userCredentialsDto.getUsername()));
     }
 }

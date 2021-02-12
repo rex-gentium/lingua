@@ -1,7 +1,6 @@
 package com.alan.lingua.controller;
 
 import com.alan.lingua.dto.response.TranslationDto;
-import com.alan.lingua.model.Translation;
 import com.alan.lingua.service.TranslationService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
@@ -26,7 +25,7 @@ public class TranslationController {
 
     @PostMapping(produces = MediaType.APPLICATION_JSON_VALUE)
     public Mono<ResponseEntity<TranslationDto>> addTranslation(Principal principal, @RequestBody Map<String, String> translationPair) {
-        return translationService.addTranslation(principal, translationPair)
+        return translationService.createTranslation(principal, translationPair)
                 .map(ResponseEntity::ok);
     }
 
@@ -49,7 +48,7 @@ public class TranslationController {
 
     @PostMapping(value = "/add", produces = MediaType.APPLICATION_JSON_VALUE)
     public Mono<ResponseEntity<TranslationDto>> addTranslation(Principal principal, @RequestBody Long id) {
-        return translationService.addTranslation(principal, id)
+        return translationService.createTranslation(principal, id)
                 .map(ResponseEntity::ok);
     }
 }

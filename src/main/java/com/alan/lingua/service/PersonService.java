@@ -2,6 +2,7 @@ package com.alan.lingua.service;
 
 import com.alan.lingua.dto.request.CreatePersonDto;
 import com.alan.lingua.dto.response.PersonDto;
+import com.alan.lingua.exception.AlreadyExistsException;
 import com.alan.lingua.mapper.PersonMapper;
 import com.alan.lingua.model.Person;
 import com.alan.lingua.repository.PersonRepository;
@@ -25,11 +26,19 @@ public class PersonService {
     }
 
     public Mono<PersonDto> createPerson(CreatePersonDto userDto) {
-        Person person = new Person();
-        person.setName(userDto.getName());
-        String passwordHash = passwordEncoder.encode(userDto.getPassword());
-        person.setPasswordHash(passwordHash);
-        return personRepository.save(person)
+        return personRepository.findFirstByName(userDto.getName())
+                .flatMap(__ -> Mono.error(new AlreadyExistsException(
+                        "Person with name {0} already exists", userDto.getName())))
+                .switchIfEmpty(Mono.defer(() -> savePerson(userDto.getName(), userDto.getPassword())))
+                .cast(Person.class)
                 .map(personMapper::toDto);
+    }
+
+    private Mono<Person> savePerson(String name, String password) {
+        Person person = new Person();
+        person.setName(name);
+        String passwordHash = passwordEncoder.encode(password);
+        person.setPasswordHash(passwordHash);
+        return personRepository.save(person);
     }
 }

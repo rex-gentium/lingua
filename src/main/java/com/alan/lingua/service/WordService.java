@@ -1,6 +1,7 @@
 package com.alan.lingua.service;
 
 import com.alan.lingua.dto.response.WordDto;
+import com.alan.lingua.exception.AlreadyExistsException;
 import com.alan.lingua.mapper.WordMapper;
 import com.alan.lingua.model.Word;
 import com.alan.lingua.repository.PersonRepository;
@@ -24,14 +25,22 @@ public class WordService extends PrincipalService {
     }
 
     public Mono<WordDto> createWord(Principal principal, WordDto wordDto) {
+        Long languageId = wordDto.getLanguageId();
+        String wordText = wordDto.getText();
         return getPerson(principal)
-                .flatMap(person -> {
-                    Word word = new Word();
-                    word.setText(wordDto.getText());
-                    word.setLanguageId(wordDto.getLanguageId());
-                    return wordRepository.save(word);
-                })
+                .flatMap(person -> wordRepository.findFirstByLanguageIdAndText(languageId, wordText))
+                .flatMap(__ -> Mono.error(new AlreadyExistsException(
+                        "Word '{0}' already exists in language '{1}'", wordText, languageId)))
+                .switchIfEmpty(Mono.defer(() -> saveWord(wordText, languageId)))
+                .cast(Word.class)
                 .map(wordMapper::toDto);
+    }
+
+    private Mono<Word> saveWord(String text, Long languageId) {
+        Word word = new Word();
+        word.setText(text);
+        word.setLanguageId(languageId);
+        return wordRepository.save(word);
     }
 
 }

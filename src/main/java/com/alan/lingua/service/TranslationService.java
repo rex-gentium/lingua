@@ -14,7 +14,6 @@ import reactor.core.publisher.Mono;
 import reactor.util.function.Tuples;
 
 import java.security.Principal;
-import java.text.MessageFormat;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -46,7 +45,7 @@ public class TranslationService extends PrincipalService {
     }
 
     @Transactional
-    public Mono<TranslationDto> addTranslation(Principal principal, Map<String, String> translationDto) {
+    public Mono<TranslationDto> createTranslation(Principal principal, Map<String, String> translationDto) {
         if (translationDto.size() != 2) {
             return Mono.error(new BadRequestException("Translation object should contain exactly 2 words"));
         }
@@ -58,9 +57,9 @@ public class TranslationService extends PrincipalService {
                     return Flux.fromIterable(translationDto.entrySet())
                             .flatMap(entry -> {
                                 Language language = Optional.ofNullable(languages.get(entry.getKey()))
-                                        .orElseThrow(() -> new NotFoundException(MessageFormat.format(
-                                                "Language with code {0} not found", entry.getKey())));
-                                return getOrCreateWord(language.getId(), entry.getValue());
+                                        .orElseThrow(() -> new NotFoundException(
+                                                "Language with code {0} not found", entry.getKey()));
+                                return createWordIfNotExists(language.getId(), entry.getValue());
                             })
                             .collectList()
                             .map(words -> Tuples.of(tuple2.getT1(), words));
@@ -69,24 +68,24 @@ public class TranslationService extends PrincipalService {
                     Person person = tuple.getT1();
                     Word source = tuple.getT2().get(0);
                     Word target = tuple.getT2().get(1);
-                    return getOrCreateTranslation(person, source, target)
-                            .flatMap(t -> getOrCreateTranslationLink(person, t.getId())
+                    return createTranslationIfNotExists(person, source, target)
+                            .flatMap(t -> createTranslationLinkIfNotExists(person, t.getId())
                                     .map(l -> t))
                             .map(t -> translationMapper.toDto(t, source, target, person));
                 });
     }
 
     @Transactional
-    public Mono<TranslationDto> addTranslation(Principal principal, Long translationId) {
+    public Mono<TranslationDto> createTranslation(Principal principal, Long translationId) {
         return getPerson(principal)
                 .flatMap(p -> translationViewRepository.findById(translationId)
                         .map(t -> Tuples.of(p, t)))
-                .flatMap(tuple -> getOrCreateTranslationLink(tuple.getT1(), tuple.getT2().getId())
+                .flatMap(tuple -> createTranslationLinkIfNotExists(tuple.getT1(), tuple.getT2().getId())
                         .map(l -> tuple.getT2()))
                 .map(translationMapper::toDto);
     }
 
-    private Mono<PersonTranslations> getOrCreateTranslationLink(Person person, Long translationId) {
+    private Mono<PersonTranslations> createTranslationLinkIfNotExists(Person person, Long translationId) {
         return personTranslationsRepository.findFirstByPersonIdAndTranslationId(person.getId(), translationId)
                 .switchIfEmpty(Mono.defer(() -> {
                     PersonTranslations link = new PersonTranslations();
@@ -96,17 +95,19 @@ public class TranslationService extends PrincipalService {
                 }));
     }
 
-    private Mono<Word> getOrCreateWord(Long languageId, String text) {
+    private Mono<Word> createWordIfNotExists(Long languageId, String text) {
         return wordRepository.findFirstByLanguageIdAndText(languageId, text)
-                .switchIfEmpty(Mono.defer(() -> {
-                    Word word = new Word();
-                    word.setLanguageId(languageId);
-                    word.setText(text);
-                    return wordRepository.save(word);
-                }));
+                .switchIfEmpty(Mono.defer(() -> saveWord(text, languageId)));
     }
 
-    private Mono<Translation> getOrCreateTranslation(Person person, Word sourceWord, Word targetWord) {
+    private Mono<Word> saveWord(String text, Long languageId) {
+        Word word = new Word();
+        word.setLanguageId(languageId);
+        word.setText(text);
+        return wordRepository.save(word);
+    }
+
+    private Mono<Translation> createTranslationIfNotExists(Person person, Word sourceWord, Word targetWord) {
         return translationRepository.findFirstBySourceWordIdAndTargetWordId(sourceWord.getId(), targetWord.getId())
                 .switchIfEmpty(Mono.defer(() -> {
                     Translation translation = new Translation();
@@ -134,12 +135,12 @@ public class TranslationService extends PrincipalService {
     public Flux<TranslationDto> getTranslations(Principal principal, String word,
                                                 String sourceLanguageCode, String targetLanguageCode) {
         return languageRepository.findFirstByCode(sourceLanguageCode)
-                .switchIfEmpty(Mono.defer(() -> Mono.error(new NotFoundException(MessageFormat.format(
-                        "Language '{0}' not found", sourceLanguageCode)))))
+                .switchIfEmpty(Mono.defer(() -> Mono.error(new NotFoundException(
+                        "Language '{0}' not found", sourceLanguageCode))))
                 .flatMap(srcLanguage -> wordRepository.findFirstByLanguageIdAndText(srcLanguage.getId(), word))
                 .flatMap(srcWord -> languageRepository.findFirstByCode(targetLanguageCode)
-                        .switchIfEmpty(Mono.defer(() -> Mono.error(new NotFoundException(MessageFormat.format(
-                                "Language '{0}' not found", targetLanguageCode)))))
+                        .switchIfEmpty(Mono.defer(() -> Mono.error(new NotFoundException(
+                                "Language '{0}' not found", targetLanguageCode))))
                         .map(l -> Tuples.of(srcWord, l)))
                 .flatMapMany(tuple -> translationViewRepository.findByWordIdAndTargetLanguageId(tuple.getT1().getId(),
                         tuple.getT2().getId()))

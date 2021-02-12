@@ -12,5 +12,5 @@ import org.springframework.stereotype.Component;
 public interface CategoryMapper {
     CategoryMapper INSTANCE = Mappers.getMapper(CategoryMapper.class);
 
-    CategoryDto toDto(Category word);
+    CategoryDto toDto(Category category);
 }

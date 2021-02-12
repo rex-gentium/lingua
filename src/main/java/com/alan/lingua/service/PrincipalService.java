@@ -7,7 +7,6 @@ import com.alan.lingua.repository.PersonRepository;
 import reactor.core.publisher.Mono;
 
 import java.security.Principal;
-import java.text.MessageFormat;
 import java.util.Optional;
 
 public abstract class PrincipalService {
@@ -21,7 +20,6 @@ public abstract class PrincipalService {
         String username = Optional.ofNullable(principal.getName())
                 .orElseThrow(() -> new NotAuthenticatedException("Username not provided in token"));
         return personRepository.findFirstByName(username)
-                .switchIfEmpty(Mono.defer(() -> Mono.error(new NotFoundException(MessageFormat.format(
-                        "User {0} not found", username)))));
+                .switchIfEmpty(Mono.defer(() -> Mono.error(new NotFoundException("User {0} not found", username))));
     }
 }
