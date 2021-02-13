@@ -1,8 +1,12 @@
 package com.alan.lingua.service;
 
+import com.alan.lingua.dto.request.AddTranslationDto;
+import com.alan.lingua.dto.response.CategoryTranslationDto;
 import com.alan.lingua.dto.response.TranslationDto;
 import com.alan.lingua.exception.BadRequestException;
+import com.alan.lingua.exception.ForbiddenActionException;
 import com.alan.lingua.exception.NotFoundException;
+import com.alan.lingua.mapper.CategoryTranslationMapper;
 import com.alan.lingua.mapper.TranslationMapper;
 import com.alan.lingua.model.*;
 import com.alan.lingua.repository.*;
@@ -28,13 +32,19 @@ public class TranslationService extends PrincipalService {
     private final TranslationMapper translationMapper;
     private final PersonTranslationsRepository personTranslationsRepository;
     private final TranslationViewRepository translationViewRepository;
+    private final CategoryRepository categoryRepository;
+    private final CategoryTranslationsRepository categoryTranslationsRepository;
+    private final CategoryTranslationMapper categoryTranslationMapper;
 
     @Autowired
     protected TranslationService(PersonRepository personRepository, WordRepository wordRepository,
                                  LanguageRepository languageRepository, TranslationRepository translationRepository,
                                  TranslationMapper translationMapper,
                                  PersonTranslationsRepository personTranslationsRepository,
-                                 TranslationViewRepository translationViewRepository) {
+                                 TranslationViewRepository translationViewRepository,
+                                 CategoryRepository categoryRepository,
+                                 CategoryTranslationsRepository categoryTranslationsRepository,
+                                 CategoryTranslationMapper categoryTranslationMapper) {
         super(personRepository);
         this.wordRepository = wordRepository;
         this.languageRepository = languageRepository;
@@ -42,6 +52,9 @@ public class TranslationService extends PrincipalService {
         this.translationMapper = translationMapper;
         this.personTranslationsRepository = personTranslationsRepository;
         this.translationViewRepository = translationViewRepository;
+        this.categoryRepository = categoryRepository;
+        this.categoryTranslationsRepository = categoryTranslationsRepository;
+        this.categoryTranslationMapper = categoryTranslationMapper;
     }
 
     @Transactional
@@ -76,19 +89,85 @@ public class TranslationService extends PrincipalService {
     }
 
     @Transactional
-    public Mono<TranslationDto> createTranslation(Principal principal, Long translationId) {
+    public Mono<TranslationDto> addTranslationToUser(Principal principal, AddTranslationDto addTranslationDto) {
         return getPerson(principal)
-                .flatMap(p -> translationViewRepository.findById(translationId)
+                .flatMap(p -> translationViewRepository.findById(addTranslationDto.getId())
                         .map(t -> Tuples.of(p, t)))
                 .flatMap(tuple -> createTranslationLinkIfNotExists(tuple.getT1(), tuple.getT2().getId())
                         .map(l -> tuple.getT2()))
                 .map(translationMapper::toDto);
     }
 
-    private Mono<PersonTranslations> createTranslationLinkIfNotExists(Person person, Long translationId) {
+    @Transactional
+    public Mono<CategoryTranslationDto> addTranslationToCategory(Principal principal, Long categoryId, AddTranslationDto addTranslationDto) {
+        return getPerson(principal)
+                .flatMap(p -> getCategoryByIdForUser(categoryId, p.getId())
+                        .flatMap(c -> getTranslationByIdForUser(addTranslationDto.getId(), p.getId())
+                                .map(t -> Tuples.of(c, t))))
+                .flatMap(tuple2 -> createCategoryTranslationLinkIfNotExists(tuple2.getT1().getId(), tuple2.getT2().getId()))
+                .map(categoryTranslationMapper::toDto);
+    }
+
+    @Transactional(readOnly = true)
+    public Flux<TranslationDto> getTranslations(Principal principal) {
+        return getPerson(principal)
+                .flatMapMany(p -> personTranslationsRepository.findByPersonId(p.getId()))
+                .map(PersonTranslation::getTranslationId)
+                .collectList()
+                .flatMapMany(translationViewRepository::findByIdIn)
+                .map(translationMapper::toDto);
+    }
+
+    @Transactional(readOnly = true)
+    public Flux<TranslationDto> getTranslations(String word, String sourceLanguageCode, String targetLanguageCode) {
+        return languageRepository.findFirstByCode(sourceLanguageCode)
+                .switchIfEmpty(Mono.defer(() -> Mono.error(new NotFoundException(
+                        "Language '{0}' not found", sourceLanguageCode))))
+                .flatMap(srcLanguage -> wordRepository.findFirstByLanguageIdAndText(srcLanguage.getId(), word))
+                .flatMap(srcWord -> languageRepository.findFirstByCode(targetLanguageCode)
+                        .switchIfEmpty(Mono.defer(() -> Mono.error(new NotFoundException(
+                                "Language '{0}' not found", targetLanguageCode))))
+                        .map(l -> Tuples.of(srcWord, l)))
+                .flatMapMany(tuple -> translationViewRepository.findByWordIdAndTargetLanguageId(tuple.getT1().getId(),
+                        tuple.getT2().getId()))
+                .map(translationMapper::toDto);
+    }
+
+    private Mono<CategoryTranslation> createCategoryTranslationLinkIfNotExists(Long categoryId, Long translationId) {
+        return categoryTranslationsRepository.findFirstByCategoryIdAndTranslationId(categoryId, translationId)
+                .switchIfEmpty(Mono.defer(() -> saveCategoryTranslation(categoryId, translationId)));
+    }
+
+    private Mono<CategoryTranslation> saveCategoryTranslation(Long categoryId, Long translationId) {
+        CategoryTranslation ct = new CategoryTranslation();
+        ct.setCategoryId(categoryId);
+        ct.setTranslationId(translationId);
+        return categoryTranslationsRepository.save(ct);
+    }
+
+    private Mono<Category> getCategoryByIdForUser(Long id, Long personId) {
+        return categoryRepository.findById(id)
+                .switchIfEmpty(Mono.defer(() -> Mono.error(new NotFoundException(
+                        "Category with id '{0}' not found", id))))
+                .filter(c -> c.getPersonId().equals(personId))
+                .switchIfEmpty(Mono.defer(() -> Mono.error(new ForbiddenActionException(
+                        "Category with id '{0}' does not belong to user '{1}'", id, personId))));
+    }
+
+    private Mono<Translation> getTranslationByIdForUser(Long id, Long personId) {
+        return translationRepository.findById(id)
+                .switchIfEmpty(Mono.defer(() -> Mono.error(new NotFoundException(
+                        "Translation with id '{0}' not found", id))))
+                .flatMap(t -> personTranslationsRepository.findFirstByPersonIdAndTranslationId(personId, t.getId())
+                        .switchIfEmpty(Mono.defer(() -> Mono.error(new ForbiddenActionException(
+                                "Translation with id '{0}' does not belong to user '{1}' dictionary", id, personId))))
+                        .map(__ -> t));
+    }
+
+    private Mono<PersonTranslation> createTranslationLinkIfNotExists(Person person, Long translationId) {
         return personTranslationsRepository.findFirstByPersonIdAndTranslationId(person.getId(), translationId)
                 .switchIfEmpty(Mono.defer(() -> {
-                    PersonTranslations link = new PersonTranslations();
+                    PersonTranslation link = new PersonTranslation();
                     link.setPersonId(person.getId());
                     link.setTranslationId(translationId);
                     return personTranslationsRepository.save(link);
@@ -121,29 +200,5 @@ public class TranslationService extends PrincipalService {
     private Mono<Map<String, Language>> getLanguagesByCodes(Set<String> codes) {
         return languageRepository.findByCodeIn(codes)
                 .collect(Collectors.toMap(Language::getCode, Function.identity()));
-    }
-
-    public Flux<TranslationDto> getTranslations(Principal principal) {
-        return getPerson(principal)
-                .flatMapMany(p -> personTranslationsRepository.findByPersonId(p.getId()))
-                .map(PersonTranslations::getTranslationId)
-                .collectList()
-                .flatMapMany(translationViewRepository::findByIdIn)
-                .map(translationMapper::toDto);
-    }
-
-    public Flux<TranslationDto> getTranslations(Principal principal, String word,
-                                                String sourceLanguageCode, String targetLanguageCode) {
-        return languageRepository.findFirstByCode(sourceLanguageCode)
-                .switchIfEmpty(Mono.defer(() -> Mono.error(new NotFoundException(
-                        "Language '{0}' not found", sourceLanguageCode))))
-                .flatMap(srcLanguage -> wordRepository.findFirstByLanguageIdAndText(srcLanguage.getId(), word))
-                .flatMap(srcWord -> languageRepository.findFirstByCode(targetLanguageCode)
-                        .switchIfEmpty(Mono.defer(() -> Mono.error(new NotFoundException(
-                                "Language '{0}' not found", targetLanguageCode))))
-                        .map(l -> Tuples.of(srcWord, l)))
-                .flatMapMany(tuple -> translationViewRepository.findByWordIdAndTargetLanguageId(tuple.getT1().getId(),
-                        tuple.getT2().getId()))
-                .map(translationMapper::toDto);
     }
 }

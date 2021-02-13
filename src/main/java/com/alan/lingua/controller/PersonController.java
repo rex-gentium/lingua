@@ -17,7 +17,7 @@ import java.security.Principal;
 
 @Log4j2
 @Controller
-@RequestMapping("/api/user")
+@RequestMapping("/api/person")
 public class PersonController extends AbstractController {
 
     private final PersonService personService;
@@ -29,6 +29,12 @@ public class PersonController extends AbstractController {
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     public Mono<ResponseEntity<PersonDto>> createPerson(@RequestBody CreatePersonDto userDto) {
         return personService.createPerson(userDto)
+                .map(ResponseEntity::ok);
+    }
+
+    @GetMapping(value = "/myself", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public Mono<ResponseEntity<PersonDto>> getMyself(Principal principal) {
+        return personService.getSelf(principal)
                 .map(ResponseEntity::ok);
     }
 }

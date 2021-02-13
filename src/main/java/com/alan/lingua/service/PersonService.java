@@ -9,28 +9,37 @@ import com.alan.lingua.repository.PersonRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Mono;
 
-@Service
-public class PersonService {
+import java.security.Principal;
 
-    private final PersonRepository personRepository;
+@Service
+public class PersonService extends PrincipalService {
+
     private final PersonMapper personMapper;
     private final PasswordEncoder passwordEncoder;
 
     @Autowired
     public PersonService(PersonRepository personRepository, PersonMapper personMapper, PasswordEncoder passwordEncoder) {
-        this.personRepository = personRepository;
+        super(personRepository);
         this.personMapper = personMapper;
         this.passwordEncoder = passwordEncoder;
     }
 
+    @Transactional
     public Mono<PersonDto> createPerson(CreatePersonDto userDto) {
         return personRepository.findFirstByName(userDto.getName())
                 .flatMap(__ -> Mono.error(new AlreadyExistsException(
-                        "Person with name {0} already exists", userDto.getName())))
+                        "Person with name '{0}' already exists", userDto.getName())))
                 .switchIfEmpty(Mono.defer(() -> savePerson(userDto.getName(), userDto.getPassword())))
                 .cast(Person.class)
+                .map(personMapper::toDto);
+    }
+
+    @Transactional(readOnly = true)
+    public Mono<PersonDto> getSelf(Principal principal) {
+        return getPerson(principal)
                 .map(personMapper::toDto);
     }
 

@@ -7,7 +7,7 @@ import org.springframework.data.relational.core.mapping.Table;
 
 @Data
 @Table("person_translations")
-public class PersonTranslations {
+public class PersonTranslation {
     @Id
     private Long id;
     @Column("person_id")

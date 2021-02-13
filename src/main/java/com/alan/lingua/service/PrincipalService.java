@@ -20,6 +20,7 @@ public abstract class PrincipalService {
         String username = Optional.ofNullable(principal.getName())
                 .orElseThrow(() -> new NotAuthenticatedException("Username not provided in token"));
         return personRepository.findFirstByName(username)
-                .switchIfEmpty(Mono.defer(() -> Mono.error(new NotFoundException("User {0} not found", username))));
+                .switchIfEmpty(Mono.defer(() -> Mono.error(new NotFoundException(
+                        "User with id '{0}' does not exist", username))));
     }
 }

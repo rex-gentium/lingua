@@ -41,7 +41,7 @@ public class SecurityConfig {
                 .authenticationManager(jwtAuthenticationManager)
                 .securityContextRepository(jwtSecurityContextRepository)
                 .authorizeExchange()
-                .pathMatchers(HttpMethod.POST, "/auth/login", "/api/user").permitAll()
+                .pathMatchers(HttpMethod.POST, "/auth/login", "/api/person").permitAll()
                 .pathMatchers(HttpMethod.GET, "/api/dictionary/**").permitAll()
                 .pathMatchers(AUTH_WHITELIST).permitAll()
                 .pathMatchers("/api/**").authenticated()
